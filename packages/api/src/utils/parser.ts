@@ -885,21 +885,54 @@ export const parseFeed2 = async (
   content?: string | null
 ): Promise<Result<Feed, AxiosError | ErrorMessage>> => {
   // TODO check if url is a telegram channel
-  //
+  if (isTelegramChannel(url)) {
+    return getFeedFromTelegram(url, content)
+  }
+
   // TODO check for content
+  if (content) {
+    return processFeed(url, content)
+  }
   //
   // if content is not available, fetch it
   return getFeedFromUrl(url)
 }
 
-export const getFeedFromContent = async (url: string): Promise<Feed | null> => {
-  return null
+const isTelegramChannel = (url: string): boolean => {
+  const telegramRegex = /https:\/\/t\.me\/([a-zA-Z0-9_]+)/
+  const telegramMatch = url.match(telegramRegex)
+  return telegramMatch !== null
 }
 
 export const getFeedFromTelegram = async (
-  url: string
-): Promise<Feed | null> => {
-  return null
+  url: string,
+  content?: string | null
+): Promise<Result<Feed, ErrorMessage>> => {
+  try {
+    if (!content) {
+      // fetch HTML and parse feeds
+      content = await fetchHtml(url)
+    }
+
+    if (!content) return mkErr({ message: 'No content' })
+
+    const dom = parseHTML(content).document
+    const title = dom.querySelector('meta[property="og:title"]')
+    const thumbnail = dom.querySelector('meta[property="og:image"]')
+    const description = dom.querySelector('meta[property="og:description"]')
+
+    return mkOk({
+      title: title?.getAttribute('content') || url,
+      url,
+      type: 'telegram',
+      thumbnail: thumbnail?.getAttribute('content') || '',
+      description: description?.getAttribute('content') || '',
+    })
+  } catch (error) {
+    logger.error('Error parsing feed', error)
+    console.log('here', error)
+    return mkErr({ message: 'Error parsing feed' })
+  }
 }
 
 export const getFeedFromUrl = async (
