@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { status } from '@grpc/grpc-js'
 import { preParseContent } from '@omnivore/content-handler'
 import { Readability } from '@omnivore/readability'
 import addressparser from 'addressparser'
-import axios from 'axios'
+import axios, { AxiosError } from 'axios'
 import createDOMPurify, { SanitizeElementHookEvent } from 'dompurify'
 import * as hljs from 'highlightjs'
 import { decode } from 'html-entities'
@@ -40,6 +41,28 @@ interface Feed {
   thumbnail?: string
   description?: string
 }
+
+interface ErrorMessage {
+  message: string
+}
+
+enum ResultStatus {
+  Success,
+  Fail,
+}
+
+type Err<F> = { identifier: ResultStatus.Fail; reason: F }
+type Ok<T> = { identifier: ResultStatus.Success; value: T }
+type Result<T, F> = Ok<T> | Err<F>
+
+const mkOk = <T>(value: T): Ok<T> => ({
+  identifier: ResultStatus.Success,
+  value,
+})
+const mkErr = <F>(reason: F): Err<F> => ({
+  identifier: ResultStatus.Fail,
+  reason,
+})
 
 const logger = buildLogger('utils.parse')
 const signToken = promisify(jwt.sign)
@@ -803,6 +826,7 @@ export const parseFeed = async (
   content?: string | null
 ): Promise<Feed | null> => {
   try {
+    console.log('args', 'url', url, 'content', content)
     // check if url is a telegram channel
     const telegramRegex = /https:\/\/t\.me\/([a-zA-Z0-9_]+)/
     const telegramMatch = url.match(telegramRegex)
@@ -811,8 +835,10 @@ export const parseFeed = async (
         // fetch HTML and parse feeds
         content = await fetchHtml(url)
       }
+      console.log('here1')
 
       if (!content) return null
+      console.log('here2')
 
       const dom = parseHTML(content).document
       const title = dom.querySelector('meta[property="og:title"]')
@@ -830,12 +856,16 @@ export const parseFeed = async (
 
     const parser = new Parser(RSS_PARSER_CONFIG)
 
+    console.log('here3')
     const feed = content
       ? await parser.parseString(content)
       : await parser.parseURL(url)
 
+    console.log('parser', parser)
+    console.log('here4')
     const feedUrl = feed.feedUrl || url
 
+    console.log('here5')
     return {
       title: feed.title || feedUrl,
       url: feedUrl,
@@ -845,6 +875,81 @@ export const parseFeed = async (
     }
   } catch (error) {
     logger.error('Error parsing feed', error)
+    console.log('here', error)
     return null
+  }
+}
+
+export const parseFeed2 = async (
+  url: string,
+  content?: string | null
+): Promise<Result<Feed, AxiosError | ErrorMessage>> => {
+  // TODO check if url is a telegram channel
+  //
+  // TODO check for content
+  //
+  // if content is not available, fetch it
+  return getFeedFromUrl(url)
+}
+
+export const getFeedFromContent = async (url: string): Promise<Feed | null> => {
+  return null
+}
+
+export const getFeedFromTelegram = async (
+  url: string
+): Promise<Feed | null> => {
+  return null
+}
+
+export const getFeedFromUrl = async (
+  url: string
+): Promise<Result<Feed, AxiosError | ErrorMessage>> => {
+  // https://rapidapi.com/guides/handle-axios-errors
+  try {
+    let res = await axios.get(url)
+    return processFeed(url, res.data, res.headers['etag'])
+  } catch (error) {
+    let err = error as AxiosError
+    logAxiosError(url, err)
+    return mkErr(err)
+  }
+}
+
+export const processFeed = async (
+  url: string,
+  content: string,
+  _etag?: string
+): Promise<Result<Feed, ErrorMessage>> => {
+  const parser = new Parser(RSS_PARSER_CONFIG)
+  try {
+    let feed = await parser.parseString(content)
+    return mkOk({
+      title: feed.title || url,
+      url,
+      thumbnail: feed.image?.url,
+      type: 'rss',
+      description: feed.description,
+    })
+  } catch (error) {
+    let err = error as Error
+    logger.error('Error parsing feed', err.message)
+    return mkErr({ message: err.message })
+  }
+}
+
+const logAxiosError = (url: string, error: AxiosError) => {
+  if (error.response) {
+    // Request made but the server responded with an error
+    logger.error(
+      'Error received from feed server',
+      url,
+      error.response.status,
+      error.message
+    )
+  } else if (error.request) {
+    logger.error('Request made but no response received from feed server', url)
+  } else {
+    console.log('Error occured while setting up the request', error.message)
   }
 }
