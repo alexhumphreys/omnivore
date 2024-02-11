@@ -823,10 +823,8 @@ export const parseFeed = async (
         // fetch HTML and parse feeds
         content = await fetchHtml(url)
       }
-      console.log('here1')
 
       if (!content) return null
-      console.log('here2')
 
       const dom = parseHTML(content).document
       const title = dom.querySelector('meta[property="og:title"]')
@@ -844,16 +842,12 @@ export const parseFeed = async (
 
     const parser = new Parser(RSS_PARSER_CONFIG)
 
-    console.log('here3')
     const feed = content
       ? await parser.parseString(content)
       : await parser.parseURL(url)
 
-    console.log('parser', parser)
-    console.log('here4')
     const feedUrl = feed.feedUrl || url
 
-    console.log('here5')
     return {
       title: feed.title || feedUrl,
       url: feedUrl,
@@ -863,7 +857,6 @@ export const parseFeed = async (
     }
   } catch (error) {
     logger.error('Error parsing feed', error)
-    console.log('here', error)
     return null
   }
 }
@@ -929,6 +922,7 @@ export const getFeedFromUrl = async (
   url: string
 ): Promise<ParserReturnType> => {
   try {
+    // TODO add etag to If-None-Match header
     let res = await axios.get(url)
     return processFeed(url, res.data, res.headers['etag'])
   } catch (error) {
@@ -984,6 +978,7 @@ const axiosErrorToSubscribeErrorCode = (
         return SubscribeErrorCode.NotFound
       }
       case 429: {
+        // TODO handle rate limit
         return SubscribeErrorCode.RateLimited
       }
       default: {
