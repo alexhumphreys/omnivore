@@ -814,7 +814,6 @@ export const parseFeed = async (
   content?: string | null
 ): Promise<Feed | null> => {
   try {
-    console.log('args', 'url', url, 'content', content)
     // check if url is a telegram channel
     const telegramRegex = /https:\/\/t\.me\/([a-zA-Z0-9_]+)/
     const telegramMatch = url.match(telegramRegex)
@@ -913,7 +912,6 @@ export const getFeedFromTelegram = async (
     }
   } catch (error) {
     logger.error('Error parsing feed', error)
-    console.log('here', error)
     return { error: SubscribeErrorCode.UnableToParse }
   }
 }
