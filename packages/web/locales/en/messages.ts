@@ -25,10 +25,16 @@ const errorMessages: Record<string, string> = {
     "Your sign up page has timed out, you'll be redirected to Google sign in page to authenticate again.",
   'error.USER_EXISTS': 'User with this email exists already',
   'error.UNKNOWN': 'An unknown error occurred',
-  'error.INVALID_PASSWORD': 'Invalid password. Password must be at least 8 chars.',
+  'error.INVALID_PASSWORD':
+    'Invalid password. Password must be at least 8 chars.',
   'error.ALREADY_SUBSCRIBED': 'You are already subscribed to this feed',
+  // TODO some more error messages
   'error.BAD_REQUEST': 'Bad request',
   'error.EXCEEDED_MAX_SUBSCRIPTIONS': 'Exceeded max subscriptions',
+  'error.FEED_PROVIDER_NO_RESPONSE': 'Feed provider did not respond',
+  'error.FEED_PROVIDER_SERVICE_ERROR': 'Feed provider service error',
+  'error.INTERNAL_SERVER_ERROR': 'Internal server error',
+  'error.RATE_LIMITED': 'Rate limited',
 }
 
 const loginPageMessages: Record<string, string> = {
@@ -43,7 +49,7 @@ const loginPageMessages: Record<string, string> = {
   'login.SIGNUP_SUCCESS': 'Sign up successful',
 }
 
-export const formatMessage = (p: { id: string}): string | undefined=> {
+export const formatMessage = (p: { id: string }): string | undefined => {
   if (p.id in errorMessages) {
     return errorMessages[p.id]
   }

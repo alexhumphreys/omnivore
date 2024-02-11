@@ -1743,6 +1743,11 @@ const schema = gql`
     NOT_FOUND
     ALREADY_SUBSCRIBED
     EXCEEDED_MAX_SUBSCRIPTIONS
+    RATE_LIMITED
+    UNABLE_TO_PARSE
+    FEED_PROVIDER_SERVICE_ERROR
+    FEED_PROVIDER_NO_RESPONSE
+    INTERNAL_SERVER_ERROR
   }
 
   union AddPopularReadResult = AddPopularReadSuccess | AddPopularReadError

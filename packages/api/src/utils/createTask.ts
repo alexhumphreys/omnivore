@@ -615,6 +615,7 @@ export interface RssSubscriptionGroup {
   checksums: (string | null)[]
   fetchContents: boolean[]
   folders: string[]
+  etag?: string
 }
 
 export const enqueueRssFeedFetch = async (
@@ -638,6 +639,7 @@ export const enqueueRssFeedFetch = async (
     userIds: subscriptionGroup.userIds,
     fetchContents: subscriptionGroup.fetchContents,
     folders: subscriptionGroup.folders,
+    etag: subscriptionGroup.etag,
   }
 
   let jobid = `refresh-feed_${stringToHash(

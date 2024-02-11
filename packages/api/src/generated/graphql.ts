@@ -2810,7 +2810,12 @@ export enum SubscribeErrorCode {
   AlreadySubscribed = 'ALREADY_SUBSCRIBED',
   BadRequest = 'BAD_REQUEST',
   ExceededMaxSubscriptions = 'EXCEEDED_MAX_SUBSCRIPTIONS',
+  FeedProviderNoResponse = 'FEED_PROVIDER_NO_RESPONSE',
+  FeedProviderServiceError = 'FEED_PROVIDER_SERVICE_ERROR',
+  InternalServerError = 'INTERNAL_SERVER_ERROR',
   NotFound = 'NOT_FOUND',
+  RateLimited = 'RATE_LIMITED',
+  UnableToParse = 'UNABLE_TO_PARSE',
   Unauthorized = 'UNAUTHORIZED'
 }
 

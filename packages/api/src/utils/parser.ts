@@ -21,7 +21,11 @@ import { v4 as uuid } from 'uuid'
 import { Highlight } from '../entity/highlight'
 import { StatusType } from '../entity/user'
 import { env } from '../env'
-import { PageType, PreparedDocumentInput } from '../generated/graphql'
+import {
+  PageType,
+  PreparedDocumentInput,
+  SubscribeErrorCode,
+} from '../generated/graphql'
 import { userRepository } from '../repository/user'
 import { ArticleFormat } from '../resolvers/article'
 import {
@@ -40,29 +44,13 @@ interface Feed {
   type: string
   thumbnail?: string
   description?: string
+  etag?: string
 }
 
-interface ErrorMessage {
-  message: string
+interface ParserReturnType {
+  feed?: Feed
+  error?: SubscribeErrorCode
 }
-
-enum ResultStatus {
-  Success,
-  Fail,
-}
-
-type Err<F> = { identifier: ResultStatus.Fail; reason: F }
-type Ok<T> = { identifier: ResultStatus.Success; value: T }
-type Result<T, F> = Ok<T> | Err<F>
-
-const mkOk = <T>(value: T): Ok<T> => ({
-  identifier: ResultStatus.Success,
-  value,
-})
-const mkErr = <F>(reason: F): Err<F> => ({
-  identifier: ResultStatus.Fail,
-  reason,
-})
 
 const logger = buildLogger('utils.parse')
 const signToken = promisify(jwt.sign)
@@ -883,7 +871,7 @@ export const parseFeed = async (
 export const parseFeed2 = async (
   url: string,
   content?: string | null
-): Promise<Result<Feed, AxiosError | ErrorMessage>> => {
+): Promise<ParserReturnType> => {
   // TODO check if url is a telegram channel
   if (isTelegramChannel(url)) {
     return getFeedFromTelegram(url, content)
@@ -907,82 +895,107 @@ const isTelegramChannel = (url: string): boolean => {
 export const getFeedFromTelegram = async (
   url: string,
   content?: string | null
-): Promise<Result<Feed, ErrorMessage>> => {
+): Promise<ParserReturnType> => {
   try {
     if (!content) {
       // fetch HTML and parse feeds
       content = await fetchHtml(url)
     }
 
-    if (!content) return mkErr({ message: 'No content' })
+    if (!content) return { error: SubscribeErrorCode.UnableToParse }
 
     const dom = parseHTML(content).document
     const title = dom.querySelector('meta[property="og:title"]')
     const thumbnail = dom.querySelector('meta[property="og:image"]')
     const description = dom.querySelector('meta[property="og:description"]')
 
-    return mkOk({
-      title: title?.getAttribute('content') || url,
-      url,
-      type: 'telegram',
-      thumbnail: thumbnail?.getAttribute('content') || '',
-      description: description?.getAttribute('content') || '',
-    })
+    return {
+      feed: {
+        title: title?.getAttribute('content') || url,
+        url,
+        type: 'telegram',
+        thumbnail: thumbnail?.getAttribute('content') || '',
+        description: description?.getAttribute('content') || '',
+      },
+    }
   } catch (error) {
     logger.error('Error parsing feed', error)
     console.log('here', error)
-    return mkErr({ message: 'Error parsing feed' })
+    return { error: SubscribeErrorCode.UnableToParse }
   }
 }
 
 export const getFeedFromUrl = async (
   url: string
-): Promise<Result<Feed, AxiosError | ErrorMessage>> => {
-  // https://rapidapi.com/guides/handle-axios-errors
+): Promise<ParserReturnType> => {
   try {
     let res = await axios.get(url)
     return processFeed(url, res.data, res.headers['etag'])
   } catch (error) {
-    let err = error as AxiosError
-    logAxiosError(url, err)
-    return mkErr(err)
+    if (axios.isAxiosError(error)) {
+      return { error: axiosErrorToSubscribeErrorCode(url, error) }
+    } else {
+      logger.error('Error parsing feed', error)
+      return { error: SubscribeErrorCode.InternalServerError }
+    }
   }
 }
 
 export const processFeed = async (
   url: string,
   content: string,
-  _etag?: string
-): Promise<Result<Feed, ErrorMessage>> => {
+  etag?: string
+): Promise<ParserReturnType> => {
   const parser = new Parser(RSS_PARSER_CONFIG)
   try {
     let feed = await parser.parseString(content)
-    return mkOk({
-      title: feed.title || url,
-      url,
-      thumbnail: feed.image?.url,
-      type: 'rss',
-      description: feed.description,
-    })
+    return {
+      feed: {
+        title: feed.title || url,
+        url,
+        thumbnail: feed.image?.url,
+        type: 'rss',
+        description: feed.description,
+        etag: etag,
+      },
+    }
   } catch (error) {
     let err = error as Error
     logger.error('Error parsing feed', err.message)
-    return mkErr({ message: err.message })
+    return { error: SubscribeErrorCode.UnableToParse }
   }
 }
 
-const logAxiosError = (url: string, error: AxiosError) => {
+const axiosErrorToSubscribeErrorCode = (
+  url: string,
+  error: AxiosError
+): SubscribeErrorCode => {
   if (error.response) {
     // Request made but the server responded with an error
     logger.error(
-      'Error received from feed server',
-      url,
-      error.response.status,
+      `Error ${error.response.status} received from feed server ${url}`,
       error.message
     )
+    switch (error.response.status) {
+      case 400: {
+        return SubscribeErrorCode.BadRequest
+      }
+      case 404: {
+        return SubscribeErrorCode.NotFound
+      }
+      case 429: {
+        return SubscribeErrorCode.RateLimited
+      }
+      default: {
+        return SubscribeErrorCode.FeedProviderServiceError
+      }
+    }
   } else if (error.request) {
-    logger.error('Request made but no response received from feed server', url)
-  } else {
-    console.log('Error occured while setting up the request', error.message)
+    logger.error(
+      `Request made but no response received from feed server: ${url}`
+    )
+    return SubscribeErrorCode.FeedProviderNoResponse
   }
+  logger.error(`Error occured while setting up the request: ${error.message}`)
+  return SubscribeErrorCode.InternalServerError
 }

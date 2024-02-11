@@ -25,6 +25,7 @@ interface RefreshFeedRequest {
   fetchContents: boolean[]
   folders: FolderType[]
   refreshContext?: RSSRefreshContext
+  etag?: string
 }
 
 export const isRefreshFeedRequest = (data: any): data is RefreshFeedRequest => {

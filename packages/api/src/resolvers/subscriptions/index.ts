@@ -1,6 +1,9 @@
 import axios from 'axios'
+import { people } from 'googleapis/build/src/apis/people'
 import { parseHTML } from 'linkedom'
+import { wrap } from 'lodash'
 import { Brackets, In } from 'typeorm'
+import { Feed } from '../../entity/feed'
 import {
   DEFAULT_SUBSCRIPTION_FOLDER,
   Subscription,
@@ -47,7 +50,12 @@ import { analytics } from '../../utils/analytics'
 import { enqueueRssFeedFetch } from '../../utils/createTask'
 import { authorized } from '../../utils/gql-utils'
 import { getAbsoluteUrl, keysToCamelCase } from '../../utils/helpers'
-import { parseFeed, parseOpml, RSS_PARSER_CONFIG } from '../../utils/parser'
+import {
+  parseFeed,
+  parseFeed2,
+  parseOpml,
+  RSS_PARSER_CONFIG,
+} from '../../utils/parser'
 
 type PartialSubscription = Omit<Subscription, 'newsletterEmail'>
 
@@ -203,12 +211,18 @@ export const subscribeResolver = authorized<
     }
 
     // validate rss feed
-    const feed = await parseFeed(feedUrl)
-    if (!feed) {
+    const feedRes = await parseFeed2(feedUrl)
+    if (feedRes.error) {
       return {
-        errorCodes: [SubscribeErrorCode.NotFound],
+        errorCodes: [feedRes.error],
+      }
+    } else if (!feedRes.feed) {
+      return {
+        errorCodes: [SubscribeErrorCode.InternalServerError],
       }
     }
+
+    let feed = feedRes.feed
 
     // find existing subscription
     const existingSubscription = await getRepository(Subscription).findOneBy({
@@ -230,6 +244,7 @@ export const subscribeResolver = authorized<
         folder: input.folder ?? undefined,
         isPrivate: input.isPrivate,
         status: SubscriptionStatus.Active,
+        etag: feed.etag,
       })
 
       // create a cloud task to fetch rss feed item for resub subscription
@@ -242,6 +257,7 @@ export const subscribeResolver = authorized<
         checksums: [updatedSubscription.lastFetchedChecksum || null],
         fetchContents: [updatedSubscription.fetchContent],
         folders: [updatedSubscription.folder || DEFAULT_SUBSCRIPTION_FOLDER],
+        etag: feed.etag,
       })
 
       return {
@@ -292,6 +308,7 @@ export const subscribeResolver = authorized<
       checksums: [null],
       fetchContents: [newSubscription.fetchContent],
       folders: [newSubscription.folder || DEFAULT_SUBSCRIPTION_FOLDER],
+      etag: feed.etag,
     })
 
     return {
@@ -467,16 +484,16 @@ export const scanFeedsResolver = authorized<
     }
 
     // this is the url to an RSS feed
-    const feed = await parseFeed(url, content)
-    if (!feed) {
-      log.error('Failed to parse RSS feed')
+    const feed = await parseFeed2(url, content)
+    // if the feed is not found, return empty feeds
+    if (feed.error || feed.feed === undefined) {
       return {
         feeds: [],
       }
     }
 
     return {
-      feeds: [feed],
+      feeds: [feed.feed],
     }
   } catch (error) {
     log.error('Error scanning URL', error)
